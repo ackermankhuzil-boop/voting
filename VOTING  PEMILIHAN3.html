@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Voting Ketua OSIS - Offline</title>
+<style>
+  :root{
+    --bg1:#0d6efd; --bg2:#6f42c1; --card:#fff; --muted:#666;
+    --accent:#0d6efd;
+  }
+  *{box-sizing:border-box;font-family:Arial,Helvetica,sans-serif}
+  body{
+    margin:0;min-height:100vh;
+    display:flex;align-items:center;justify-content:center;
+    background:linear-gradient(135deg,var(--bg1),var(--bg2));
+    padding:18px;
+  }
+  .card{
+    width:420px; background:var(--card); border-radius:12px; padding:20px;
+    box-shadow:0 12px 30px rgba(0,0,0,0.18); color:#222;
+  }
+  h1{font-size:20px;margin:0 0 12px;text-align:center}
+  label.small{font-size:13px;color:var(--muted)}
+  input[type=text]{width:100%;padding:10px;border-radius:8px;border:1px solid #ddd;margin:8px 0 12px}
+  .candidates{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+  .cand{
+    display:flex;gap:10px;align-items:center;padding:8px;border-radius:10px;
+    border:1px solid #eee;background:#fafafa;cursor:pointer;
+  }
+  .avatar{
+    width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-weight:700;color:#fff;
+  }
+  .avatar.and { background:#ff7b54 }
+  .avatar.bud { background:#ffd166; color:#333 }
+  .avatar.cit { background:#6bcB6b }
+  .cand input{margin-right:8px}
+  .cand:hover{transform:translateY(-2px); box-shadow:0 6px 18px rgba(0,0,0,0.08)}
+  .row{display:flex;gap:8px;justify-content:center;margin-top:12px}
+  button{padding:10px 14px;border-radius:8px;border:none;cursor:pointer;font-weight:700}
+  .btn-primary{background:linear-gradient(90deg,var(--bg1),var(--bg2));color:#fff}
+  .btn-muted{background:#f1f1f1}
+  #msg{margin-top:10px;color:green;font-weight:700;text-align:center}
+  #results{display:none;margin-top:14px;border-top:1px dashed #eee;padding-top:12px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:8px;border-bottom:1px solid #f3f3f3}
+  tfoot td{font-weight:700}
+  .small{font-size:12px;color:var(--muted);margin-top:8px}
+  .right{text-align:right}
+  canvas{margin-top:14px}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>🗳 Pemilihan Ketua OSIS</h1>
+
+  <label class="small">Nama Lengkap</label>
+  <input id="name" type="text" placeholder="Masukkan nama" required autocomplete="off">
+
+  <div class="small" style="margin-top:6px">Pilih Calon</div>
+  <div class="candidates" id="candidates">
+    <label class="cand"><input type="radio" name="calon" value="Andi" required>
+      <div class="avatar and">A</div>
+      <div><strong>Andi</strong><div class="small">Visi singkat / jurusan</div></div>
+    </label>
+
+    <label class="cand"><input type="radio" name="calon" value="Budi">
+      <div class="avatar bud">B</div>
+      <div><strong>Budi</strong><div class="small">Visi singkat / jurusan</div></div>
+    </label>
+
+    <label class="cand"><input type="radio" name="calon" value="Citra">
+      <div class="avatar cit">C</div>
+      <div><strong>Citra</strong><div class="small">Visi singkat / jurusan</div></div>
+    </label>
+  </div>
+
+  <div class="row">
+    <button id="send" class="btn-primary">KIRIM SUARA</button>
+    <button id="view" class="btn-muted">LIHAT REKAP</button>
+  </div>
+
+  <div id="msg"></div>
+
+  <div id="results">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <strong>📊 Rekap Sementara</strong>
+      <div>
+        <button id="export" class="btn-muted">Ekspor CSV</button>
+        <button id="reset" class="btn-muted">Reset</button>
+      </div>
+    </div>
+
+    <table id="tableResults" style="margin-top:10px">
+      <thead><tr><th>Calon</th><th class="right">Suara</th></tr></thead>
+      <tbody></tbody>
+      <tfoot><tr><td>Total Pemilih</td><td id="total" class="right">0</td></tr></tfoot>
+    </table>
+
+    <!-- GRAFIK BAR -->
+    <canvas id="chartVotes" height="200"></canvas>
+
+    <div class="small">Data tersimpan lokal di browser laptop/HP ini.</div>
+  </div>
+</div>
+
+<!-- CDN Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+  // safe localStorage
+  function g(k){try{return localStorage.getItem(k)}catch(e){return null}}
+  function s(k,v){try{localStorage.setItem(k,v);return true}catch(e){return false}}
+
+  const defaultCandidates = ["Andi","Budi","Citra"];
+  function readVotes(){ return JSON.parse(g('votes')||'[]') }
+
+  let chart; // untuk simpan grafik Chart.js
+
+  // submit
+  document.getElementById('send').addEventListener('click', ()=>{
+    const name = (document.getElementById('name').value||'').trim();
+    const chosen = document.querySelector('input[name="calon"]:checked');
+    const msg = document.getElementById('msg');
+    if(!name || !chosen){ msg.style.color='red'; msg.textContent='Isi nama dan pilih calon.'; return; }
+    const votes = readVotes();
+    votes.push({name:name, calon: chosen.value, waktu: new Date().toISOString()});
+    if(!s('votes', JSON.stringify(votes))){
+      msg.style.color='red'; msg.textContent='Gagal menyimpan - coba browser lain.';
+      return;
+    }
+    msg.style.color='green'; msg.textContent='✅ Suara tersimpan.';
+    document.getElementById('name').value=''; chosen.checked=false;
+    document.getElementById('results').style.display='none';
+  });
+
+  // tampil rekap
+  function renderResults(){
+    const votes = readVotes();
+    const counts = {};
+    defaultCandidates.forEach(c=>counts[c]=0);
+    votes.forEach(v=>{ if(counts[v.calon]===undefined) counts[v.calon]=0; counts[v.calon]++ });
+    const tbody = document.querySelector('#tableResults tbody');
+    tbody.innerHTML='';
+    Object.keys(counts).forEach(c=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML = '<td>'+c+'</td><td class="right">'+counts[c]+'</td>';
+      tbody.appendChild(tr);
+    });
+    document.getElementById('total').textContent = votes.length;
+    document.getElementById('results').style.display='block';
+
+    // update grafik
+    const ctx = document.getElementById('chartVotes').getContext('2d');
+    const labels = Object.keys(counts);
+    const data = Object.values(counts);
+    if(chart) chart.destroy();
+    chart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [{
+          label: 'Jumlah Suara',
+          data: data,
+          backgroundColor: ['#ff7b54','#ffd166','#6bcb6b']
+        }]
+      },
+      options: {
+        responsive:true,
+        scales:{ y:{ beginAtZero:true, ticks:{ stepSize:1 } } },
+        plugins:{ legend:{ display:false } }
+      }
+    });
+  }
+
+  document.getElementById('view').addEventListener('click', ()=> renderResults());
+
+  // export CSV
+  document.getElementById('export').addEventListener('click', ()=>{
+    const votes = readVotes();
+    if(votes.length===0){ alert('Belum ada suara.'); return; }
+    const lines = [['Nama','Calon','Waktu']];
+    votes.forEach(v=> lines.push([v.name,v.calon,v.waktu]));
+    const csv = lines.map(r=> r.map(cell => '"'+String(cell).replace(/"/g,'""')+'"').join(',')).join('\n');
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'hasil_voting.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  // reset (panitia)
+  document.getElementById('reset').addEventListener('click', ()=>{
+    if(!confirm('Reset semua hasil? (Hanya panitia lakukan)')) return;
+    s('votes','[]'); renderResults();
+    alert('Sudah direset.');
+  });
+
+  // init safety test for localStorage
+  (function(){
+    try{ localStorage.setItem('_t','1'); localStorage.removeItem('_t'); } catch(e){
+      alert('Peringatan: Browser ini mungkin memblokir penyimpanan lokal. Gunakan browser lain atau jangan pakai mode incognito.');
+    }
+  })();
+</script>
+</body>
+</html>
